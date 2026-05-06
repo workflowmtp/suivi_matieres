@@ -5,6 +5,58 @@ import { prisma } from "../../../lib/prisma";
 const DEFAULT_ROLE_KEY = "defaultRole";
 const SELECTED_PROJECT_KEY = "selectedProjectId";
 const recordTypes = ["tools", "consumables", "materials", "labor", "expenses", "transport", "daily"];
+const defaultPermissions = [
+  { id: "view_all", label: "Voir les tableaux et modules" },
+  { id: "project_edit", label: "Créer / modifier chantier" },
+  { id: "create_tools", label: "Ajouter outillage" },
+  { id: "create_consumables", label: "Ajouter consommables" },
+  { id: "create_materials", label: "Ajouter matières" },
+  { id: "create_labor", label: "Ajouter main-d’œuvre" },
+  { id: "create_expenses", label: "Ajouter dépenses" },
+  { id: "create_transport", label: "Ajouter coût transport" },
+  { id: "create_daily", label: "Créer fiche journalière" },
+  { id: "validate", label: "Valider écritures" },
+  { id: "correct", label: "Corriger écritures" },
+  { id: "cancel", label: "Annuler écritures" },
+  { id: "attachments", label: "Gérer pièces jointes" },
+  { id: "audit_view", label: "Voir journal écritures" },
+  { id: "export", label: "Exporter rapports" },
+  { id: "access_manage", label: "Gérer utilisateurs et permissions" },
+  { id: "reset", label: "Réinitialiser la base" }
+];
+const defaultRoles = [
+  { name: "Administrateur", permissions: defaultPermissions.map(p => p.id) },
+  { name: "PCA", permissions: ["view_all", "project_edit", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
+  { name: "DG", permissions: ["view_all", "project_edit", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
+  { name: "Contrôleur", permissions: ["view_all", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
+  { name: "Chef chantier", permissions: ["view_all", "project_edit", "create_tools", "create_consumables", "create_materials", "create_transport", "create_daily", "attachments"] },
+  { name: "Magasinier", permissions: ["view_all", "create_tools", "create_consumables", "create_materials", "attachments"] },
+  { name: "Comptable", permissions: ["view_all", "create_labor", "create_expenses", "create_transport", "attachments", "export"] },
+  { name: "Lecture", permissions: ["view_all"] }
+];
+
+async function ensureDefaultAccess() {
+  await prisma.$transaction(async tx => {
+    for (const p of defaultPermissions) {
+      await tx.permission.upsert({ where: { id: p.id }, create: p, update: { label: p.label } });
+    }
+    for (const r of defaultRoles) {
+      await tx.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
+      for (const permissionId of r.permissions) {
+        await tx.rolePermission.upsert({
+          where: { roleName_permissionId: { roleName: r.name, permissionId } },
+          create: { roleName: r.name, permissionId },
+          update: {}
+        });
+      }
+    }
+    await tx.appSetting.upsert({
+      where: { key: DEFAULT_ROLE_KEY },
+      create: { key: DEFAULT_ROLE_KEY, value: "Lecture" },
+      update: {}
+    });
+  });
+}
 
 function splitRecord(record: any) {
   const {
@@ -54,6 +106,7 @@ function mergeRecord(row: any) {
 }
 
 async function readRelationalState() {
+  await ensureDefaultAccess();
   const [roles, permissions, settings, users, projects, records, attachments, audit] = await Promise.all([
     prisma.role.findMany({ include: { permissions: true }, orderBy: { name: "asc" } }),
     prisma.permission.findMany(),
@@ -64,7 +117,7 @@ async function readRelationalState() {
     prisma.attachment.findMany({ orderBy: { ts: "desc" } }),
     prisma.auditLog.findMany({ orderBy: { ts: "desc" }, take: 1000 })
   ]);
-  if (!projects.length && !roles.length && !users.length) return null;
+  if (!projects.length && !users.length) return null;
   const selectedProjectId = String(settings.find(s => s.key === SELECTED_PROJECT_KEY)?.value || projects[0]?.id || "");
   const project = projects.find(p => p.id === selectedProjectId) || projects[0];
   const byType: Record<string, any[]> = Object.fromEntries(recordTypes.map(t => [t, []]));
@@ -86,14 +139,14 @@ async function readRelationalState() {
 }
 
 async function writeRelationalState(body: any) {
-  const roles = body?.auth?.roles || [];
+  const roles = body?.auth?.roles?.length ? body.auth.roles : defaultRoles;
   const users = body?.auth?.users || [];
   const projects = body?.projects || (body?.project ? [body.project] : []);
   const attachments = body?.attachments || [];
   const audit = body?.audit || [];
 
   await prisma.$transaction(async tx => {
-    for (const p of body?.appPermissions || []) {
+    for (const p of defaultPermissions) {
       await tx.permission.upsert({ where: { id: p.id }, create: { id: p.id, label: p.label }, update: { label: p.label } });
     }
     const permissionIds = new Set<string>();
