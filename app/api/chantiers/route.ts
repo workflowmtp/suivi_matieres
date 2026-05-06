@@ -7,7 +7,9 @@ const SELECTED_PROJECT_KEY = "selectedProjectId";
 const recordTypes = ["tools", "consumables", "materials", "labor", "expenses", "transport", "daily"];
 const defaultPermissions = [
   { id: "view_all", label: "Voir les tableaux et modules" },
-  { id: "project_edit", label: "Créer / modifier chantier" },
+  { id: "project_create", label: "Créer chantier" },
+  { id: "project_edit", label: "Modifier chantier" },
+  { id: "project_delete", label: "Supprimer chantier" },
   { id: "create_tools", label: "Ajouter outillage" },
   { id: "create_consumables", label: "Ajouter consommables" },
   { id: "create_materials", label: "Ajouter matières" },
@@ -26,8 +28,8 @@ const defaultPermissions = [
 ];
 const defaultRoles = [
   { name: "Administrateur", permissions: defaultPermissions.map(p => p.id) },
-  { name: "PCA", permissions: ["view_all", "project_edit", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
-  { name: "DG", permissions: ["view_all", "project_edit", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
+  { name: "PCA", permissions: ["view_all", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
+  { name: "DG", permissions: ["view_all", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
   { name: "Contrôleur", permissions: ["view_all", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
   { name: "Chef chantier", permissions: ["view_all", "project_edit", "create_tools", "create_consumables", "create_materials", "create_transport", "create_daily", "attachments"] },
   { name: "Magasinier", permissions: ["view_all", "create_tools", "create_consumables", "create_materials", "attachments"] },
@@ -154,7 +156,17 @@ async function writeRelationalState(body: any) {
   for (const id of permissionIds) await prisma.permission.upsert({ where: { id }, create: { id, label: id }, update: {} });
   for (const r of roles) await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
   await prisma.rolePermission.deleteMany();
-  for (const r of roles) for (const permissionId of r.permissions || []) await prisma.rolePermission.create({ data: { roleName: r.name, permissionId } });
+  const rolePermissionKeys = new Set<string>();
+  for (const r of roles) for (const permissionId of r.permissions || []) {
+    const key = `${r.name}::${permissionId}`;
+    if (rolePermissionKeys.has(key)) continue;
+    rolePermissionKeys.add(key);
+    await prisma.rolePermission.upsert({
+      where: { roleName_permissionId: { roleName: r.name, permissionId } },
+      create: { roleName: r.name, permissionId },
+      update: {}
+    });
+  }
   await prisma.appSetting.upsert({ where: { key: DEFAULT_ROLE_KEY }, create: { key: DEFAULT_ROLE_KEY, value: body?.auth?.defaultRole || "Lecture" }, update: { value: body?.auth?.defaultRole || "Lecture" } });
   await prisma.appSetting.upsert({ where: { key: SELECTED_PROJECT_KEY }, create: { key: SELECTED_PROJECT_KEY, value: body?.selectedProjectId || projects[0]?.id || "" }, update: { value: body?.selectedProjectId || projects[0]?.id || "" } });
 
