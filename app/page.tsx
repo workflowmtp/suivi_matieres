@@ -95,10 +95,11 @@ export default function Page(){
  const [login,setLogin]=useState({email:"",password:""});
  const [register,setRegister]=useState({name:"",email:"",password:""});
  const [sessionUserId,setSessionUserId]=useState<string|null>(null);
+ const [dirty,setDirty]=useState(false);
  const [authMode,setAuthMode]=useState<"login"|"register">("login");
  const [filters,setFilters]=useState<Record<string,string>>({});
  useEffect(()=>{try{setSessionUserId(localStorage.getItem(SESSION_KEY))}catch{} fetch("/api/chantiers").then(async r=>{if(!r.ok)throw new Error((await r.json()).error||"Lecture PostgreSQL impossible");return r.json()}).then(({data})=>setDb(normalize(data))).catch(e=>{console.error(e);alert(`${e.message}. Les données locales du navigateur ne seront pas utilisées pour éviter d’afficher d’anciennes données.`);setDb(defaultData())}).finally(()=>setReady(true))},[]);
- useEffect(()=>{if(!ready)return; const persisted=structuredClone(db); persisted.auth.sessionUserId=null; try{localStorage.setItem(STORAGE_KEY,JSON.stringify(persisted))}catch{} fetch("/api/chantiers",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(persisted)}).then(async r=>{if(!r.ok)throw new Error((await r.json()).error||"Sauvegarde PostgreSQL impossible")}).catch(e=>alert(`${e.message}. Vérifiez DATABASE_URL, la base PostgreSQL et le serveur.`))},[db,ready]);
+ useEffect(()=>{if(!ready||!dirty)return; const persisted=structuredClone(db); persisted.auth.sessionUserId=null; try{localStorage.setItem(STORAGE_KEY,JSON.stringify(persisted))}catch{} fetch("/api/chantiers",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(persisted)}).then(async r=>{if(!r.ok)throw new Error((await r.json()).error||"Sauvegarde PostgreSQL impossible")}).then(()=>setDirty(false)).catch(e=>alert(`${e.message}. Vérifiez DATABASE_URL, la base PostgreSQL et le serveur.`))},[db,ready,dirty]);
  const user=useMemo(()=>db.auth.users.find(u=>u.id===sessionUserId)||null,[db.auth.users,sessionUserId]);
  const userLabel=user?`${user.name} — ${user.role}`:"Non connecté";
  const rolePerms=(role:Role)=>role==="Administrateur"?appPermissions.map(p=>p.id):db.auth.roles.find(r=>r.name===role)?.permissions||[];
@@ -109,7 +110,7 @@ export default function Page(){
  const requireProjectAccess=()=>{if(!user)return false;if(isChef&&!currentProject?.chefIds?.includes(user.id)){alert("Ce chef chantier n’est pas affecté à ce chantier.");return false}return true};
  const requirePerm=(p:Permission,msg="Accès refusé pour ce rôle.")=>{if(!hasPerm(p)){alert(msg);return false}if(["project_edit","create_tools","create_consumables","create_materials","create_transport","create_daily","attachments"].includes(p)&&!requireProjectAccess())return false;return true};
  const canView=(id:View)=>!!user&&(id==="access"?user.role==="Administrateur":id==="audit"?hasPerm("audit_view"):hasPerm("view_all"));
- const mutate=(fn:(d:DB)=>void)=>setDb(old=>{const d=structuredClone(old); fn(d); return d});
+ const mutate=(fn:(d:DB)=>void)=>setDb(old=>{const d=structuredClone(old); fn(d); setDirty(true); return d});
  const logAction=(d:DB,action:string,type:string,recordId:string,label:string,details="")=>{const project=d.projects.find(p=>p.id===d.selectedProjectId)||d.project;d.audit.unshift({id:uid(),ts:now(),user:userLabel,role:user?.role,projectId:project?.id,projectName:project?.name,action,type,recordId,label:label||"",details}); if(d.audit.length>1000)d.audit=d.audit.slice(0,1000)};
  const scopedDb=useMemo(()=>{const pid=currentProject?.id||db.selectedProjectId; const pick=(arr:any[])=>arr.filter(x=>x.projectId===pid); return {...db,project:currentProject||db.project,selectedProjectId:pid,tools:pick(db.tools),consumables:pick(db.consumables),materials:pick(db.materials),labor:pick(db.labor),expenses:pick(db.expenses),transport:pick(db.transport),daily:pick(db.daily),attachments:db.attachments.filter(a=>a.projectId===pid),audit:db.audit.filter(a=>a.projectId===pid)} as DB},[db,currentProject]);
  useEffect(()=>{if(!ready||!user||!accessibleProjects.length)return;if(!accessibleProjects.some(p=>p.id===db.selectedProjectId))mutate(d=>{d.selectedProjectId=accessibleProjects[0].id;d.project=accessibleProjects[0]})},[ready,user,accessibleProjects,db.selectedProjectId]);
