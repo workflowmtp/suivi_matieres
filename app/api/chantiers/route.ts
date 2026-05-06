@@ -26,6 +26,7 @@ const defaultPermissions = [
   { id: "access_manage", label: "Gérer utilisateurs et permissions" },
   { id: "reset", label: "Réinitialiser la base" }
 ];
+const allowedPermissionIds = new Set(defaultPermissions.map(p => p.id));
 const defaultRoles = [
   { name: "Administrateur", permissions: defaultPermissions.map(p => p.id) },
   { name: "PCA", permissions: ["view_all", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
@@ -136,7 +137,10 @@ async function readRelationalState() {
 }
 
 async function writeRelationalState(body: any) {
-  const roles = body?.auth?.roles?.length ? body.auth.roles : defaultRoles;
+  const roles = (body?.auth?.roles?.length ? body.auth.roles : defaultRoles).map((r: any) => ({
+    name: r.name,
+    permissions: [...new Set((r.permissions || []).filter((id: string) => allowedPermissionIds.has(id)))]
+  }));
   const users = body?.auth?.users || [];
   const projects = body?.projects || (body?.project ? [body.project] : []);
   const attachments = body?.attachments || [];
@@ -166,7 +170,11 @@ async function writeRelationalState(body: any) {
   await prisma.auditLog.deleteMany();
   await prisma.chantierRecord.deleteMany();
   await prisma.projectChef.deleteMany();
-  for (const u of users) await prisma.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active } });
+  const validRoleNames = new Set(roles.map((r: any) => r.name));
+  for (const u of users) {
+    const roleName = validRoleNames.has(u.role) ? u.role : body?.auth?.defaultRole || "Lecture";
+    await prisma.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName, active: !!u.active } });
+  }
   for (const p of projects) await prisma.project.upsert({ where: { id: p.id }, create: { id: p.id, name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null }, update: { name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null } });
   for (const p of projects) for (const userId of p.chefIds || []) await prisma.projectChef.create({ data: { projectId: p.id, userId } });
   for (const type of recordTypes) for (const r of body?.[type] || []) {
