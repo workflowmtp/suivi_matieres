@@ -36,25 +36,26 @@ const defaultRoles = [
 ];
 
 async function ensureDefaultAccess() {
-  await prisma.$transaction(async tx => {
-    for (const p of defaultPermissions) {
-      await tx.permission.upsert({ where: { id: p.id }, create: p, update: { label: p.label } });
+  const existingRoles = await prisma.role.count();
+  const existingPermissions = await prisma.permission.count();
+  if (existingRoles >= defaultRoles.length && existingPermissions >= defaultPermissions.length) return;
+  for (const p of defaultPermissions) {
+    await prisma.permission.upsert({ where: { id: p.id }, create: p, update: { label: p.label } });
+  }
+  for (const r of defaultRoles) {
+    await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
+    for (const permissionId of r.permissions) {
+      await prisma.rolePermission.upsert({
+        where: { roleName_permissionId: { roleName: r.name, permissionId } },
+        create: { roleName: r.name, permissionId },
+        update: {}
+      });
     }
-    for (const r of defaultRoles) {
-      await tx.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
-      for (const permissionId of r.permissions) {
-        await tx.rolePermission.upsert({
-          where: { roleName_permissionId: { roleName: r.name, permissionId } },
-          create: { roleName: r.name, permissionId },
-          update: {}
-        });
-      }
-    }
-    await tx.appSetting.upsert({
-      where: { key: DEFAULT_ROLE_KEY },
-      create: { key: DEFAULT_ROLE_KEY, value: "Lecture" },
-      update: {}
-    });
+  }
+  await prisma.appSetting.upsert({
+    where: { key: DEFAULT_ROLE_KEY },
+    create: { key: DEFAULT_ROLE_KEY, value: "Lecture" },
+    update: {}
   });
 }
 
@@ -145,35 +146,32 @@ async function writeRelationalState(body: any) {
   const attachments = body?.attachments || [];
   const audit = body?.audit || [];
 
-  await prisma.$transaction(async tx => {
-    for (const p of defaultPermissions) {
-      await tx.permission.upsert({ where: { id: p.id }, create: { id: p.id, label: p.label }, update: { label: p.label } });
-    }
-    const permissionIds = new Set<string>();
-    roles.forEach((r: any) => (r.permissions || []).forEach((id: string) => permissionIds.add(id)));
-    for (const id of permissionIds) await tx.permission.upsert({ where: { id }, create: { id, label: id }, update: {} });
-    for (const r of roles) await tx.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
-    await tx.rolePermission.deleteMany();
-    for (const r of roles) for (const permissionId of r.permissions || []) await tx.rolePermission.create({ data: { roleName: r.name, permissionId } });
-    await tx.appSetting.upsert({ where: { key: DEFAULT_ROLE_KEY }, create: { key: DEFAULT_ROLE_KEY, value: body?.auth?.defaultRole || "Lecture" }, update: { value: body?.auth?.defaultRole || "Lecture" } });
-    await tx.appSetting.upsert({ where: { key: SELECTED_PROJECT_KEY }, create: { key: SELECTED_PROJECT_KEY, value: body?.selectedProjectId || projects[0]?.id || "" }, update: { value: body?.selectedProjectId || projects[0]?.id || "" } });
+  for (const p of defaultPermissions) {
+    await prisma.permission.upsert({ where: { id: p.id }, create: { id: p.id, label: p.label }, update: { label: p.label } });
+  }
+  const permissionIds = new Set<string>();
+  roles.forEach((r: any) => (r.permissions || []).forEach((id: string) => permissionIds.add(id)));
+  for (const id of permissionIds) await prisma.permission.upsert({ where: { id }, create: { id, label: id }, update: {} });
+  for (const r of roles) await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
+  await prisma.rolePermission.deleteMany();
+  for (const r of roles) for (const permissionId of r.permissions || []) await prisma.rolePermission.create({ data: { roleName: r.name, permissionId } });
+  await prisma.appSetting.upsert({ where: { key: DEFAULT_ROLE_KEY }, create: { key: DEFAULT_ROLE_KEY, value: body?.auth?.defaultRole || "Lecture" }, update: { value: body?.auth?.defaultRole || "Lecture" } });
+  await prisma.appSetting.upsert({ where: { key: SELECTED_PROJECT_KEY }, create: { key: SELECTED_PROJECT_KEY, value: body?.selectedProjectId || projects[0]?.id || "" }, update: { value: body?.selectedProjectId || projects[0]?.id || "" } });
 
-    for (const u of users) await tx.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active } });
-    for (const p of projects) await tx.project.upsert({ where: { id: p.id }, create: { id: p.id, name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null }, update: { name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null } });
-    await tx.projectChef.deleteMany();
-    for (const p of projects) for (const userId of p.chefIds || []) await tx.projectChef.create({ data: { projectId: p.id, userId } });
-
-    await tx.chantierRecord.deleteMany();
-    for (const type of recordTypes) for (const r of body?.[type] || []) {
-      const base = splitRecord(r);
-      if (!base.id || !base.projectId) continue;
-      await tx.chantierRecord.create({ data: { ...base, type, data: base.data as Prisma.InputJsonValue } });
-    }
-    await tx.attachment.deleteMany();
-    for (const a of attachments) await tx.attachment.create({ data: { id: a.id, projectId: a.projectId, createdById: a.createdBy || null, createdByRole: a.createdByRole || null, date: a.date || "", ts: a.ts || new Date().toISOString(), filename: a.filename || "", mime: a.mime || "application/octet-stream", size: Number(a.size || 0), dataUrl: a.dataUrl || "", linkedType: a.linkedType || "project", linkedId: a.linkedId || a.projectId, linkedLabel: a.linkedLabel || "", description: a.description || "" } });
-    await tx.auditLog.deleteMany();
-    for (const a of audit.slice(0, 1000)) await tx.auditLog.create({ data: { id: a.id, ts: a.ts || new Date().toISOString(), user: a.user || "", role: a.role || null, projectId: a.projectId || null, projectName: a.projectName || null, action: a.action || "", type: a.type || "", recordId: a.recordId || "", label: a.label || "", details: a.details || "" } });
-  });
+  await prisma.attachment.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.chantierRecord.deleteMany();
+  await prisma.projectChef.deleteMany();
+  for (const u of users) await prisma.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName: u.role, active: !!u.active } });
+  for (const p of projects) await prisma.project.upsert({ where: { id: p.id }, create: { id: p.id, name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null }, update: { name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null } });
+  for (const p of projects) for (const userId of p.chefIds || []) await prisma.projectChef.create({ data: { projectId: p.id, userId } });
+  for (const type of recordTypes) for (const r of body?.[type] || []) {
+    const base = splitRecord(r);
+    if (!base.id || !base.projectId) continue;
+    await prisma.chantierRecord.create({ data: { ...base, type, data: base.data as Prisma.InputJsonValue } });
+  }
+  for (const a of attachments) await prisma.attachment.create({ data: { id: a.id, projectId: a.projectId, createdById: a.createdBy || null, createdByRole: a.createdByRole || null, date: a.date || "", ts: a.ts || new Date().toISOString(), filename: a.filename || "", mime: a.mime || "application/octet-stream", size: Number(a.size || 0), dataUrl: a.dataUrl || "", linkedType: a.linkedType || "project", linkedId: a.linkedId || a.projectId, linkedLabel: a.linkedLabel || "", description: a.description || "" } });
+  for (const a of audit.slice(0, 1000)) await prisma.auditLog.create({ data: { id: a.id, ts: a.ts || new Date().toISOString(), user: a.user || "", role: a.role || null, projectId: a.projectId || null, projectName: a.projectName || null, action: a.action || "", type: a.type || "", recordId: a.recordId || "", label: a.label || "", details: a.details || "" } });
 }
 
 export async function GET() {
