@@ -188,6 +188,15 @@ function ProjectView({db,user,accessibleProjects,mutate,logAction,requirePerm}:a
  const canCreate=currentPerms.includes("project_create");
  const canEdit=currentPerms.includes("project_edit");
  const canDelete=currentPerms.includes("project_delete");
+ const [query,setQuery]=useState("");
+ const [statusFilter,setStatusFilter]=useState("");
+ const [page,setPage]=useState(1);
+ const [pageSize,setPageSize]=useState(10);
+ const filteredProjects=accessibleProjects.filter((x:Project)=>{const q=query.toLowerCase();const text=[x.name,x.code,x.client,x.lieu,x.responsable,x.controleur,x.status,x.primaryChefId?nameOf(x.primaryChefId):"",...(x.chefIds||[]).map(nameOf)].join(" ").toLowerCase();return (!q||text.includes(q))&&(!statusFilter||x.status===statusFilter)});
+ const totalPages=Math.max(1,Math.ceil(filteredProjects.length/pageSize));
+ const safePage=Math.min(page,totalPages);
+ const pagedProjects=filteredProjects.slice((safePage-1)*pageSize,safePage*pageSize);
+ useEffect(()=>setPage(1),[query,statusFilter,pageSize]);
  const openCreate=()=>{if(!requirePerm("project_create"))return;setP(blank());setModal(true)};
  const openEdit=(x:Project)=>{if(!requirePerm("project_edit"))return;setP(structuredClone(x));setModal(true)};
  const save=()=>{const creating=!db.projects.some((x:Project)=>x.id===p.id);if(!requirePerm(creating?"project_create":"project_edit"))return;if(!p.name)return alert("Nom du chantier obligatoire");mutate((d:DB)=>{const saved={...p,updatedAt:now(),primaryChefId:(p.chefIds||[]).includes(p.primaryChefId||"")?p.primaryChefId:""};const idx=d.projects.findIndex(x=>x.id===saved.id);if(idx>=0)d.projects[idx]=saved;else d.projects.push(saved);d.selectedProjectId=saved.id;d.project=saved;logAction(d,creating?"ADD":"EDIT","project",saved.id,saved.name,creating?"Chantier créé":"Chantier modifié")});setModal(false)};
