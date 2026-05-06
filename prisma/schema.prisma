@@ -14,3 +14,154 @@ model AppState {
 
   @@map("app_state")
 }
+
+model Role {
+  name        String           @id
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id    String           @id
+  label String
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleName     String     @map("role_name")
+  permissionId String     @map("permission_id")
+  role         Role       @relation(fields: [roleName], references: [name], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleName, permissionId])
+  @@map("role_permissions")
+}
+
+model AppSetting {
+  key   String @id
+  value Json
+
+  @@map("app_settings")
+}
+
+model User {
+  id          String           @id
+  name        String
+  email       String           @unique
+  password    String
+  active      Boolean          @default(true)
+  roleName    String           @map("role_name")
+  role        Role             @relation(fields: [roleName], references: [name])
+  assignments ProjectChef[]
+  records     ChantierRecord[]
+  attachments Attachment[]
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Project {
+  id            String           @id
+  name          String
+  code          String
+  client        String
+  lieu          String
+  responsable   String
+  controleur    String
+  budget        Float            @default(0)
+  start         String
+  end           String
+  status        String
+  description   String
+  primaryChefId String?          @map("primary_chef_id")
+  chefs         ProjectChef[]
+  records       ChantierRecord[]
+  attachments   Attachment[]
+  audits        AuditLog[]
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  @@map("projects")
+}
+
+model ProjectChef {
+  projectId String  @map("project_id")
+  userId    String  @map("user_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("project_chefs")
+}
+
+model ChantierRecord {
+  id               String       @id
+  projectId        String       @map("project_id")
+  type             String
+  date             String
+  validationStatus String       @map("validation_status")
+  version          Int          @default(1)
+  obs              String?
+  createdById      String?      @map("created_by_id")
+  createdByRole    String?      @map("created_by_role")
+  validatedAt      String?      @map("validated_at")
+  validatedBy      String?      @map("validated_by")
+  cancelledAt      String?      @map("cancelled_at")
+  cancelReason     String?      @map("cancel_reason")
+  correctedAt      String?      @map("corrected_at")
+  correctionReason String?      @map("correction_reason")
+  originalId       String?      @map("original_id")
+  data             Json
+  project          Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy        User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@index([projectId, type])
+  @@map("chantier_records")
+}
+
+model Attachment {
+  id            String          @id
+  projectId     String          @map("project_id")
+  createdById   String?         @map("created_by_id")
+  createdByRole String?         @map("created_by_role")
+  date          String
+  ts            String
+  filename      String
+  mime          String
+  size          Int
+  dataUrl       String          @map("data_url")
+  linkedType    String          @map("linked_type")
+  linkedId      String          @map("linked_id")
+  linkedLabel   String          @map("linked_label")
+  description   String
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy     User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@map("attachments")
+}
+
+model AuditLog {
+  id          String   @id
+  ts          String
+  user        String
+  role        String?
+  projectId   String?  @map("project_id")
+  projectName String?  @map("project_name")
+  action      String
+  type        String
+  recordId    String   @map("record_id")
+  label       String
+  details     String
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@map("audit_logs")
+}
