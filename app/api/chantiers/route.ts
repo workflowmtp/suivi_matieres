@@ -38,21 +38,15 @@ const defaultRoles = [
 ];
 
 async function ensureDefaultAccess() {
-  const existingRoles = await prisma.role.count();
-  const existingPermissions = await prisma.permission.count();
-  if (existingRoles >= defaultRoles.length && existingPermissions >= defaultPermissions.length) return;
   for (const p of defaultPermissions) {
     await prisma.permission.upsert({ where: { id: p.id }, create: p, update: { label: p.label } });
   }
   for (const r of defaultRoles) {
     await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
-    for (const permissionId of r.permissions) {
-      await prisma.rolePermission.upsert({
-        where: { roleName_permissionId: { roleName: r.name, permissionId } },
-        create: { roleName: r.name, permissionId },
-        update: {}
-      });
-    }
+    await prisma.rolePermission.createMany({
+      data: [...new Set(r.permissions)].map(permissionId => ({ roleName: r.name, permissionId })),
+      skipDuplicates: true
+    });
   }
   await prisma.appSetting.upsert({
     where: { key: DEFAULT_ROLE_KEY },
@@ -157,16 +151,14 @@ async function writeRelationalState(body: any) {
   for (const r of roles) await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
   await prisma.rolePermission.deleteMany();
   const rolePermissionKeys = new Set<string>();
+  const rolePermissionRows: { roleName: string; permissionId: string }[] = [];
   for (const r of roles) for (const permissionId of r.permissions || []) {
     const key = `${r.name}::${permissionId}`;
     if (rolePermissionKeys.has(key)) continue;
     rolePermissionKeys.add(key);
-    await prisma.rolePermission.upsert({
-      where: { roleName_permissionId: { roleName: r.name, permissionId } },
-      create: { roleName: r.name, permissionId },
-      update: {}
-    });
+    rolePermissionRows.push({ roleName: r.name, permissionId });
   }
+  if (rolePermissionRows.length) await prisma.rolePermission.createMany({ data: rolePermissionRows, skipDuplicates: true });
   await prisma.appSetting.upsert({ where: { key: DEFAULT_ROLE_KEY }, create: { key: DEFAULT_ROLE_KEY, value: body?.auth?.defaultRole || "Lecture" }, update: { value: body?.auth?.defaultRole || "Lecture" } });
   await prisma.appSetting.upsert({ where: { key: SELECTED_PROJECT_KEY }, create: { key: SELECTED_PROJECT_KEY, value: body?.selectedProjectId || projects[0]?.id || "" }, update: { value: body?.selectedProjectId || projects[0]?.id || "" } });
 
