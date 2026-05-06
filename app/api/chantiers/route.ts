@@ -143,6 +143,7 @@ async function writeRelationalState(body: any) {
   }));
   const users = body?.auth?.users || [];
   const projects = body?.projects || (body?.project ? [body.project] : []);
+  const projectIds = projects.map((p: any) => p.id).filter(Boolean);
   const attachments = body?.attachments || [];
   const audit = body?.audit || [];
 
@@ -170,6 +171,7 @@ async function writeRelationalState(body: any) {
   await prisma.auditLog.deleteMany();
   await prisma.chantierRecord.deleteMany();
   await prisma.projectChef.deleteMany();
+  if (projectIds.length) await prisma.project.deleteMany({ where: { id: { notIn: projectIds } } });
   const validRoleNames = new Set(roles.map((r: any) => r.name));
   for (const u of users) {
     const roleName = validRoleNames.has(u.role) ? u.role : body?.auth?.defaultRole || "Lecture";
@@ -183,7 +185,8 @@ async function writeRelationalState(body: any) {
     await prisma.chantierRecord.create({ data: { ...base, type, data: base.data as Prisma.InputJsonValue } });
   }
   for (const a of attachments) await prisma.attachment.create({ data: { id: a.id, projectId: a.projectId, createdById: a.createdBy || null, createdByRole: a.createdByRole || null, date: a.date || "", ts: a.ts || new Date().toISOString(), filename: a.filename || "", mime: a.mime || "application/octet-stream", size: Number(a.size || 0), dataUrl: a.dataUrl || "", linkedType: a.linkedType || "project", linkedId: a.linkedId || a.projectId, linkedLabel: a.linkedLabel || "", description: a.description || "" } });
-  for (const a of audit.slice(0, 1000)) await prisma.auditLog.create({ data: { id: a.id, ts: a.ts || new Date().toISOString(), user: a.user || "", role: a.role || null, projectId: a.projectId || null, projectName: a.projectName || null, action: a.action || "", type: a.type || "", recordId: a.recordId || "", label: a.label || "", details: a.details || "" } });
+  const validProjectIds = new Set(projectIds);
+  for (const a of audit.slice(0, 1000)) await prisma.auditLog.create({ data: { id: a.id, ts: a.ts || new Date().toISOString(), user: a.user || "", role: a.role || null, projectId: validProjectIds.has(a.projectId) ? a.projectId : null, projectName: a.projectName || null, action: a.action || "", type: a.type || "", recordId: a.recordId || "", label: a.label || "", details: a.details || "" } });
 }
 
 export async function GET() {
