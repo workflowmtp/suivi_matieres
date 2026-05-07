@@ -192,7 +192,16 @@ async function writeRelationalState(body: any) {
   }
   if (roleNames.length) await prisma.role.deleteMany({ where: { name: { notIn: roleNames }, users: { none: {} } } });
   for (const p of projects) await prisma.project.upsert({ where: { id: p.id }, create: { id: p.id, name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null }, update: { name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null } });
-  for (const p of projects) for (const userId of p.chefIds || []) await prisma.projectChef.create({ data: { projectId: p.id, userId } });
+  const projectChefKeys = new Set<string>();
+  const projectChefRows: { projectId: string; userId: string }[] = [];
+  for (const p of projects) for (const userId of p.chefIds || []) {
+    if (!p.id || !userId) continue;
+    const key = `${p.id}::${userId}`;
+    if (projectChefKeys.has(key)) continue;
+    projectChefKeys.add(key);
+    projectChefRows.push({ projectId: p.id, userId });
+  }
+  if (projectChefRows.length) await prisma.projectChef.createMany({ data: projectChefRows, skipDuplicates: true });
   for (const type of recordTypes) for (const r of body?.[type] || []) {
     const base = splitRecord(r);
     if (!base.id || !base.projectId) continue;
