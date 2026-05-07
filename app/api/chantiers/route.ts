@@ -177,7 +177,8 @@ async function writeRelationalState(body: any) {
   if (projectIds.length) await prisma.project.deleteMany({ where: { id: { notIn: projectIds } } });
   const validRoleNames = new Set(roles.map((r: any) => r.name));
   for (const u of users) {
-    const roleName = validRoleNames.has(u.role) ? u.role : body?.auth?.defaultRole || "Lecture";
+    const requestedRole = u.role || u.roleName;
+    const roleName = validRoleNames.has(requestedRole) ? requestedRole : body?.auth?.defaultRole || "Lecture";
     await prisma.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName, active: !!u.active } });
   }
   if (roleNames.length) await prisma.role.deleteMany({ where: { name: { notIn: roleNames }, users: { none: {} } } });
