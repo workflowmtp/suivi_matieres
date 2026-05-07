@@ -42,7 +42,9 @@ async function ensureDefaultAccess() {
   for (const p of defaultPermissions) {
     await prisma.permission.upsert({ where: { id: p.id }, create: p, update: { label: p.label } });
   }
-  for (const r of defaultRoles) {
+  const roleCount = await prisma.role.count();
+  const rolesToSeed = roleCount ? defaultRoles.filter(r => r.name === "Administrateur") : defaultRoles;
+  for (const r of rolesToSeed) {
     await prisma.role.upsert({ where: { name: r.name }, create: { name: r.name }, update: {} });
     await prisma.rolePermission.createMany({
       data: [...new Set(r.permissions)].map(permissionId => ({ roleName: r.name, permissionId })),
@@ -144,6 +146,7 @@ async function writeRelationalState(body: any) {
   const users = body?.auth?.users || [];
   const projects = body?.projects || (body?.project ? [body.project] : []);
   const projectIds = projects.map((p: any) => p.id).filter(Boolean);
+  const roleNames = roles.map((r: any) => r.name).filter(Boolean);
   const attachments = body?.attachments || [];
   const audit = body?.audit || [];
 
@@ -177,6 +180,7 @@ async function writeRelationalState(body: any) {
     const roleName = validRoleNames.has(u.role) ? u.role : body?.auth?.defaultRole || "Lecture";
     await prisma.user.upsert({ where: { id: u.id }, create: { id: u.id, name: u.name, email: u.email, password: u.password, roleName, active: !!u.active }, update: { name: u.name, email: u.email, password: u.password, roleName, active: !!u.active } });
   }
+  if (roleNames.length) await prisma.role.deleteMany({ where: { name: { notIn: roleNames }, users: { none: {} } } });
   for (const p of projects) await prisma.project.upsert({ where: { id: p.id }, create: { id: p.id, name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null }, update: { name: p.name || "", code: p.code || "", client: p.client || "", lieu: p.lieu || "", responsable: p.responsable || "", controleur: p.controleur || "", budget: Number(p.budget || 0), start: p.start || "", end: p.end || "", status: p.status || "Préparation", description: p.description || "", primaryChefId: p.primaryChefId || null } });
   for (const p of projects) for (const userId of p.chefIds || []) await prisma.projectChef.create({ data: { projectId: p.id, userId } });
   for (const type of recordTypes) for (const r of body?.[type] || []) {
