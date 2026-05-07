@@ -7,6 +7,15 @@ const SELECTED_PROJECT_KEY = "selectedProjectId";
 const recordTypes = ["tools", "consumables", "materials", "labor", "expenses", "transport", "daily"];
 const defaultPermissions = [
   { id: "view_all", label: "Voir les tableaux et modules" },
+  { id: "view_project", label: "Consulter chantiers" },
+  { id: "view_tools", label: "Consulter outillage" },
+  { id: "view_consumables", label: "Consulter consommables" },
+  { id: "view_materials", label: "Consulter matières" },
+  { id: "view_labor", label: "Consulter main-d’œuvre" },
+  { id: "view_expenses", label: "Consulter dépenses" },
+  { id: "view_transport", label: "Consulter transport" },
+  { id: "view_daily", label: "Consulter fiches journalières" },
+  { id: "view_attachments", label: "Consulter pièces jointes" },
   { id: "project_create", label: "Créer chantier" },
   { id: "project_edit", label: "Modifier chantier" },
   { id: "project_delete", label: "Supprimer chantier" },
@@ -29,12 +38,12 @@ const defaultPermissions = [
 const allowedPermissionIds = new Set(defaultPermissions.map(p => p.id));
 const defaultRoles = [
   { name: "Administrateur", permissions: defaultPermissions.map(p => p.id) },
-  { name: "PCA", permissions: ["view_all", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
-  { name: "DG", permissions: ["view_all", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
-  { name: "Contrôleur", permissions: ["view_all", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
-  { name: "Chef chantier", permissions: ["view_all", "project_edit", "create_tools", "create_consumables", "create_materials", "create_transport", "create_daily", "attachments"] },
-  { name: "Magasinier", permissions: ["view_all", "create_tools", "create_consumables", "create_materials", "attachments"] },
-  { name: "Comptable", permissions: ["view_all", "create_labor", "create_expenses", "create_transport", "attachments", "export"] },
+  { name: "PCA", permissions: ["view_all", "view_project", "view_tools", "view_consumables", "view_materials", "view_labor", "view_expenses", "view_transport", "view_daily", "view_attachments", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export", "reset"] },
+  { name: "DG", permissions: ["view_all", "view_project", "view_tools", "view_consumables", "view_materials", "view_labor", "view_expenses", "view_transport", "view_daily", "view_attachments", "project_create", "project_edit", "project_delete", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
+  { name: "Contrôleur", permissions: ["view_all", "view_project", "view_tools", "view_consumables", "view_materials", "view_labor", "view_expenses", "view_transport", "view_daily", "view_attachments", "validate", "correct", "cancel", "attachments", "audit_view", "export"] },
+  { name: "Chef chantier", permissions: ["view_all", "view_project", "view_tools", "view_consumables", "view_materials", "view_transport", "view_daily", "view_attachments", "project_edit", "create_tools", "create_consumables", "create_materials", "create_transport", "create_daily", "attachments"] },
+  { name: "Magasinier", permissions: ["view_all", "view_project", "view_tools", "view_consumables", "view_materials", "view_attachments", "create_tools", "create_consumables", "create_materials", "attachments"] },
+  { name: "Comptable", permissions: ["view_all", "view_project", "view_labor", "view_expenses", "view_transport", "view_attachments", "create_labor", "create_expenses", "create_transport", "attachments", "export"] },
   { name: "Lecture", permissions: ["view_all"] }
 ];
 
